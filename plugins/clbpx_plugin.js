@@ -6,7 +6,7 @@ function getManifest() {
     return JSON.stringify({
         "id": "clbpx",
         "name": "CLB Phim Xưa",
-        "version": "1.0.3",
+        "version": "1.0.4",
         "baseUrl": "https://clbphimxua.com",
         "iconUrl": "https://raw.githubusercontent.com/youngbi/repo/main/plugins/clbpx.ico",
         "isEnabled": true,
@@ -165,8 +165,8 @@ function parseSearchResponse(htmlResponse) {
 
 function parseMovieDetail(htmlResponse) {
     try {
-        var id = "unknown";
-        var title = "Unknown";
+        var id = "";
+        var title = "";
         var posterUrl = "";
         var description = "";
 
@@ -350,19 +350,16 @@ function parseDetailResponse(htmlResponse, fallbackUrl) {
     try {
         var streamUrl = fallbackUrl || "";
 
-        var customJs = "var attempt=0; var clbInt=setInterval(function(){" +
-            " var b = document.querySelector('.jw-display-icon-display, .jw-display-icon-container," +
-            " img[src*=play], .play-btn, .vjs-big-play-button, div[class*=play], button[class*=play]');" +
-            " if(b && b.offsetWidth > 0){ try{b.click();}catch(e){} }" +
-            " if(attempt++ > 40) clearInterval(clbInt);" +
-            " }, 500);";
+        var customJs = "var style = document.createElement('style');" +
+            "style.innerHTML = '#playback { display: none !important; }';" +
+            "document.head.appendChild(style);";
 
         return JSON.stringify({
             url: streamUrl,
             headers: {
                 "Referer": "https://clbphimxua.com/",
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Custom-Js": ""
+                "Custom-Js": customJs
             }
         });
     } catch (error) {
