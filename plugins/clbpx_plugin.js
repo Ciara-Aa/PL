@@ -6,11 +6,7 @@ function getManifest() {
     return JSON.stringify({
         "id": "clbpx",
         "name": "CLB Phim Xưa",
-<<<<<<< Updated upstream
         "version": "1.0.4",
-=======
-        "version": "1.0.3",
->>>>>>> Stashed changes
         "baseUrl": "https://clbphimxua.com",
         "iconUrl": "https://raw.githubusercontent.com/youngbi/repo/main/plugins/clbpx.ico",
         "isEnabled": true,
