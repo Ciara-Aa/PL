@@ -6,7 +6,7 @@ function getManifest() {
     return JSON.stringify({
         "id": "phim4k_vip",
         "name": "Phim4K VIP",
-        "version": "1.2.4",
+        "version": "1.0.0",
         "baseUrl": "https://stremio.phim4k.xyz",
         "iconUrl": "https://phim4k.com/favicon.ico",
         "isEnabled": true,
