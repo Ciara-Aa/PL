@@ -6,7 +6,7 @@ function getManifest() {
     return JSON.stringify({
         "id": "phim4k_vip",
         "name": "Phim4K VIP",
-        "version": "1.0.0",
+        "version": "1.2.5",
         "baseUrl": "https://stremio.phim4k.xyz",
         "iconUrl": "https://phim4k.com/favicon.ico",
         "isEnabled": true,
@@ -14,7 +14,7 @@ function getManifest() {
     });
 }
 
-// Token
+// Token xác thực cho tài khoản VIP
 const AUTH_TOKEN = "eyJ1c2VybmFtZSI6Imh1bmciLCJwYXNzd29yZCI6Imh1bmciLCJ0cyI6MTc2NDcyNTIxNDA1NX0";
 
 function getHomeSections() {
@@ -25,15 +25,14 @@ function getHomeSections() {
 }
 
 function getPrimaryCategories() {
-    // Trích xuất từ danh sách genres trong manifest của bạn
     return JSON.stringify([
-        { name: 'Phim lẻ', slug: 'phim4k_movies' },
+        { name: 'Phim mới', slug: 'phim4k_movies' },
         { name: 'Phim bộ', slug: 'phim4k_series' },
-        { name: 'Phim Việt Nam', slug: 'Việt Nam' },
-        { name: 'Hàn Quốc', slug: 'Hàn Quốc' },
-        { name: 'Trung Quốc', slug: 'Trung Quốc' },
-        { name: 'Hành động', slug: 'Action & Adventure' },
-        { name: 'Kinh dị', slug: 'Horror' }
+        { name: 'Phim hành động', slug: 'Action & Adventure' },
+        { name: 'Phim viễn tưởng', slug: 'Sci-Fi & Fantasy' },
+        { name: 'Hoạt hình', slug: 'Animation' },
+        { name: 'Kinh dị', slug: 'Horror' },
+        { name: 'Hài hước', slug: 'Comedy' }
     ]);
 }
 
@@ -43,29 +42,26 @@ function getPrimaryCategories() {
 
 function getUrlList(slug, filtersJson) {
     var filters = JSON.parse(filtersJson || "{}");
-    var page = filters.page || 1;
     var type = (slug === 'phim4k_series') ? 'series' : 'movie';
     
-    // Nếu slug là một thể loại (genre), ta dùng cấu trúc lọc của Stremio
+    // Xử lý lọc theo thể loại từ menu
     if (slug !== 'phim4k_movies' && slug !== 'phim4k_series') {
         return `https://stremio.phim4k.xyz/${AUTH_TOKEN}/catalog/${type}/phim4k_${type}s/genre=${encodeURIComponent(slug)}.json`;
     }
 
-    // Mặc định trả về catalog chính
     return `https://stremio.phim4k.xyz/${AUTH_TOKEN}/catalog/${type}/${slug}.json`;
 }
 
 function getUrlSearch(keyword, filtersJson) {
-    // API Phim4K hỗ trợ search qua catalog endpoint
     return `https://stremio.phim4k.xyz/${AUTH_TOKEN}/catalog/movie/phim4k_movies/search=${encodeURIComponent(keyword)}.json`;
 }
 
 function getUrlDetail(id) {
-    // id thường có dạng phim4k:movie:413 hoặc phim4k:yet-hi
     var type = id.includes('series') ? 'series' : 'movie';
     return `https://stremio.phim4k.xyz/${AUTH_TOKEN}/meta/${type}/${id}.json`;
 }
 
+// Hàm lấy danh sách luồng phát (Stream)
 function getUrlStream(id) {
     var type = id.includes('series') ? 'series' : 'movie';
     return `https://stremio.phim4k.xyz/${AUTH_TOKEN}/stream/${type}/${id}.json`;
@@ -86,10 +82,10 @@ function parseListResponse(apiResponseJson) {
                 title: item.name,
                 posterUrl: item.poster,
                 backdropUrl: item.background,
-                year: item.releaseInfo || 0,
+                year: item.name.match(/\((\d{4})\)/)?.[1] || 0, // Trích xuất năm từ tên phim
                 quality: "HD/4K",
-                episode_current: item.description || "",
-                lang: "Vietsub"
+                episode_current: item.description ? item.description.substring(0, 100) + "..." : "",
+                lang: "Vietsub/Lồng tiếng"
             };
         });
 
@@ -97,7 +93,7 @@ function parseListResponse(apiResponseJson) {
             items: movies,
             pagination: {
                 currentPage: 1,
-                totalPages: 10, // API Stremio thường không trả về tổng trang rõ ràng trong metas
+                totalPages: 1,
                 totalItems: movies.length
             }
         });
@@ -116,10 +112,10 @@ function parseMovieDetail(apiResponseJson) {
             title: meta.name,
             posterUrl: meta.poster,
             backdropUrl: meta.background,
-            description: meta.description || "",
+            description: (meta.description || "").replace(/<[^>]*>/g, ""),
             year: meta.year || 0,
             rating: meta.imdbRating || 0,
-            quality: "4K",
+            quality: "4K/Bluray",
             category: (meta.genres || []).join(", "),
             country: meta.country || "",
             director: (meta.director || []).join(", "),
@@ -128,27 +124,32 @@ function parseMovieDetail(apiResponseJson) {
     } catch (error) { return "null"; }
 }
 
+// PARSER CHO STREAM - Đã cập nhật để đọc đúng cấu trúc link tập phim bạn gửi
 function parseDetailResponse(apiResponseJson) {
     try {
         var response = JSON.parse(apiResponseJson);
         var streams = response.streams || [];
         
-        var streamUrl = "";
-        if (streams.length > 0) {
-            streamUrl = streams[0].url || "";
-        }
+        if (streams.length === 0) return "{}";
+
+        // Chọn stream đầu tiên làm mặc định hoặc có thể logic chọn chất lượng cao nhất ở đây
+        var selectedStream = streams[0];
 
         return JSON.stringify({
-            url: streamUrl,
+            url: selectedStream.url,
+            title: selectedStream.title,
             headers: { 
                 "User-Agent": "Stremio/1.6.0",
                 "Referer": "https://phim4k.com" 
             },
-            subtitles: []
+            // Metadata bổ sung cho trình phát
+            extra: streams.map(function(s) {
+                return { name: s.title, url: s.url };
+            })
         });
     } catch (error) { return "{}"; }
 }
 
 function getImageUrl(path) {
-    return path || ""; // Phim4K trả về link ảnh tuyệt đối trong JSON
+    return path || "";
 }
