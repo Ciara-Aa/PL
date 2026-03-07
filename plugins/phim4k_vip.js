@@ -32,13 +32,11 @@ function getUrlSearch(keyword, filtersJson) {
     return "https://stremio.phim4k.xyz/" + AUTH_TOKEN + "/catalog/movie/phim4k_movies/search=" + encodeURIComponent(keyword) + ".json";
 }
 
-// Quan trọng: Để lấy đủ thông tin phim, app sẽ gọi meta trước
 function getUrlDetail(id) {
     var type = id.indexOf('series') > -1 ? 'series' : 'movie';
     return "https://stremio.phim4k.xyz/" + AUTH_TOKEN + "/meta/" + type + "/" + id + ".json";
 }
 
-// Hàm lấy stream riêng biệt
 function getUrlStream(id) {
     var type = id.indexOf('series') > -1 ? 'series' : 'movie';
     return "https://stremio.phim4k.xyz/" + AUTH_TOKEN + "/stream/" + type + "/" + id + ".json";
@@ -76,13 +74,7 @@ function parseMovieDetail(apiResponseJson) {
         var response = JSON.parse(apiResponseJson);
         var meta = response.meta || {};
         
-        // Tạo một server mặc định để chứa các link phim (nếu là movie)
-        // Lưu ý: Với Movie, App của bạn cần parseMovieDetail trả về thông tin phim + servers
-        var servers = [{
-            name: "Phim4K VIP",
-            episodes: [{ id: meta.id, name: "Chọn chất lượng bên dưới", slug: meta.id }]
-        }];
-
+        // Trả về đầy đủ thông tin phim để tránh lỗi MovieDetail
         return JSON.stringify({
             id: meta.id,
             title: meta.name,
@@ -92,19 +84,18 @@ function parseMovieDetail(apiResponseJson) {
             year: meta.year || 0,
             rating: meta.imdbRating || 0,
             quality: "4K",
-            servers: servers,
             category: (meta.genres || []).join(", "),
             country: meta.country || "",
             director: (meta.director || []).join(", "),
-            casts: (meta.cast || []).join(", ")
+            casts: (meta.cast || []).join(", "),
+            servers: [{
+                name: "Phim4K VIP",
+                episodes: [{ id: meta.id, name: "Xem Ngay", slug: meta.id }]
+            }]
         });
     } catch (error) { return "null"; }
 }
 
-/**
- * Đã sửa lỗi: App gọi hàm này để lấy danh sách link khi bấm vào tập phim
- * Biến mỗi link (4K, 1080p...) thành một "server" hoặc "tập" để App không bị thiếu id/title
- */
 function parseDetailResponse(apiStreamResponseJson) {
     try {
         var response = JSON.parse(apiStreamResponseJson);
@@ -112,16 +103,15 @@ function parseDetailResponse(apiStreamResponseJson) {
         
         if (streams.length === 0) return "{}";
 
-        // Mặc định lấy link đầu tiên, nhưng trả về đầy đủ headers để tránh Access Denied
+        // CHỈ LẤY 1 LINK DUY NHẤT để tránh lỗi logic app
         return JSON.stringify({
             url: streams[0].url,
             headers: { 
-                "User-Agent": "Stremio/1.6.0",
-                "Referer": "https://phim4k.lol/",
-                "Origin": "https://phim4k.lol"
+                "User-Agent": "Stremio/1.6.0 (AppleTV; tvOS/17.0)", 
+                "Referer": "https://stremio.phim4k.xyz/",
+                "Origin": "https://stremio.phim4k.xyz"
             },
-            // Nếu app hỗ trợ danh sách link phụ:
-            extra: streams.map(function(s) { return { name: s.title, url: s.url }; })
+            subtitles: []
         });
     } catch (error) { return "{}"; }
 }
