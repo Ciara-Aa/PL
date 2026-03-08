@@ -129,34 +129,47 @@ var PluginUtils = {
     }
 };
 
+// Parse list / search: yanhh3d.ee uses .flw-item cards
 function parseListResponse(html) {
     var movies = [];
     var foundSlugs = {};
-    var itemRegex = /<(?:article|div)[^>]*class="[^"]*(?:halim-item|thumb|halim-thumb)[^"]*"[^>]*>([\s\S]*?)<\/(?:article|div)>/gi;
+
+    // Match each .flw-item card block
+    var itemRegex = /<div[^>]*class="[^"]*flw-item[^"]*"[^>]*>([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/gi;
     var match;
 
     while ((match = itemRegex.exec(html)) !== null) {
-        var itemHtml = match[1];
-        var linkMatch = itemHtml.match(/<a[^>]+href="([^"]+)"[^>]*title=/i) || itemHtml.match(/<a[^>]+href="([^"]+)"/i);
+        var itemHtml = match[0];
+
+        // URL & slug from film-poster-ahref or dynamic-name links
+        var linkMatch = itemHtml.match(/<a[^>]+class="[^"]*film-poster-ahref[^"]*"[^>]+href="([^"]+)"/i) ||
+                        itemHtml.match(/<a[^>]+href="(https?:\/\/yanhh3d\.ee\/[^"]+)"[^>]*class="[^"]*dynamic-name/i) ||
+                        itemHtml.match(/<a[^>]+href="(https?:\/\/yanhh3d\.ee\/[^"]+)"/i);
         if (!linkMatch) continue;
 
         var url = linkMatch[1];
-        if (url.indexOf("http") === -1) url = "https://yanhh3d.ee" + (url.indexOf("/") === 0 ? "" : "/") + url;
         var slug = url.replace(/https?:\/\/[^\/]+\//, "").replace(/\/$/, "");
+        if (!slug) continue;
 
-        var titleMatch = itemHtml.match(/title="([^"]+)"/i) || itemHtml.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i);
-        var title = titleMatch ? PluginUtils.cleanText(titleMatch[1]) : "";
+        // Title from title attribute or .dynamic-name text
+        var titleMatch = itemHtml.match(/title="([^"]+)"/i) ||
+                         itemHtml.match(/<a[^>]+class="[^"]*dynamic-name[^"]*"[^>]*>([^<]+)<\/a>/i);
+        var title = titleMatch ? PluginUtils.cleanText(titleMatch[1]) : slug;
 
-        var thumbMatch = itemHtml.match(/<img[^>]+src="([^"]+)"/i) || itemHtml.match(/<img[^>]+data-src="([^"]+)"/i);
+        // Thumbnail from .film-poster-img
+        var thumbMatch = itemHtml.match(/<img[^>]+class="[^"]*film-poster-img[^"]*"[^>]+src="([^"]+)"/i) ||
+                         itemHtml.match(/<img[^>]+src="([^"]+)"[^>]+class="[^"]*film-poster-img/i) ||
+                         itemHtml.match(/<img[^>]+src="([^"]+\.(?:webp|jpg|png|jpeg))[^"]*"/i);
         var thumb = thumbMatch ? thumbMatch[1] : "";
 
-        var episodeMatch = itemHtml.match(/<span[^>]*class="[^"]*episode[^"]*"[^>]*>([\s\S]*?)<\/span>/i);
-        var episode = episodeMatch ? PluginUtils.cleanText(episodeMatch[1]) : "HD";
+        // Episode badge from .tick-rate
+        var epMatch = itemHtml.match(/<div[^>]*class="[^"]*tick-rate[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+        var episode = epMatch ? PluginUtils.cleanText(epMatch[1]) : "4K";
 
-        if (slug && !foundSlugs[slug]) {
+        if (!foundSlugs[slug]) {
             movies.push({
                 id: slug,
-                title: title || "Không tiêu đề",
+                title: title,
                 posterUrl: thumb,
                 backdropUrl: thumb,
                 quality: "4K",
@@ -167,15 +180,33 @@ function parseListResponse(html) {
         }
     }
 
+    // Fallback: simpler regex to catch any missed hrefs
+    if (movies.length === 0) {
+        var fallbackRegex = /<a[^>]+href="(https?:\/\/yanhh3d\.ee\/[^"\/]+\/[^"\/]+\/)"[^>]*title="([^"]+)"[^>]*>/gi;
+        var fm;
+        while ((fm = fallbackRegex.exec(html)) !== null) {
+            var furl = fm[1];
+            var fslug = furl.replace(/https?:\/\/[^\/]+\//, "").replace(/\/$/, "");
+            var ftitle = fm[2];
+            if (fslug && !foundSlugs[fslug]) {
+                movies.push({
+                    id: fslug, title: ftitle, posterUrl: "", backdropUrl: "",
+                    quality: "4K", episode_current: "4K", lang: "Vietsub"
+                });
+                foundSlugs[fslug] = true;
+            }
+        }
+    }
+
     var totalPages = 1;
     var currentPage = 1;
-    var currentMatch = html.match(/<span[^>]*class="[^"]*current[^"]*"[^>]*>(\d+)<\/span>/i);
-    if (currentMatch) currentPage = parseInt(currentMatch[1]);
-    
+    var curMatch = html.match(/<span[^>]*class="[^"]*current[^"]*"[^>]*>(\d+)<\/span>/i);
+    if (curMatch) currentPage = parseInt(curMatch[1]);
+
     var pageRegex = /page\/(\d+)\//g;
-    var pageMatch;
-    while ((pageMatch = pageRegex.exec(html)) !== null) {
-        var p = parseInt(pageMatch[1]);
+    var pm;
+    while ((pm = pageRegex.exec(html)) !== null) {
+        var p = parseInt(pm[1]);
         if (p > totalPages) totalPages = p;
     }
 
@@ -187,68 +218,89 @@ function parseListResponse(html) {
 
 function parseSearchResponse(html) { return parseListResponse(html); }
 
+// Parse movie detail page: extract title, poster, description, episode list
 function parseMovieDetail(html) {
     try {
+        // Title
         var titleMatch = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
         var title = titleMatch ? PluginUtils.cleanText(titleMatch[1]) : "";
 
+        // Poster
         var poster = "";
-        var posterMetaMatch = html.match(/<meta[^>]*property="og:image"[^>]*content="([^"]+)"/i);
-        if (posterMetaMatch) poster = posterMetaMatch[1];
+        var ogMatch = html.match(/<meta[^>]*property="og:image"[^>]*content="([^"]+)"/i);
+        if (ogMatch) { poster = ogMatch[1]; }
 
-        var description = "";
-        var contentMatch = html.match(/<div[^>]*class="[^"]*(?:entry-content|video-item-info)[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
-        if (contentMatch) description = PluginUtils.cleanText(contentMatch[1]);
+        // Description
+        var desc = "";
+        var descMetaMatch = html.match(/<meta[^>]*name="description"[^>]*content="([^"]+)"/i);
+        if (descMetaMatch) desc = PluginUtils.cleanText(descMetaMatch[1]);
 
-        var postIdMatch = html.match(/post_id["']?\s*:\s*["']?(\d+)["']?/i) || html.match(/data-post-id=["'](\d+)["']/i);
-        var postId = postIdMatch ? postIdMatch[1] : "";
+        // Year from <span class="item">2024</span> or meta
+        var year = 0;
+        var yearMatch = html.match(/release\/(20\d{2})/i) || html.match(/>(\d{4})<\/a>/);
+        if (yearMatch) year = parseInt(yearMatch[1]);
 
+        // Episode list on yanhh3d.ee — episodes are plain <li><a href="...tap-X.html">Tập X</a></li>
+        // Collect all episode links matching the pattern /slug/tap-X.html
         var servers = [];
-        var listRegex = /<ul[^>]*id="listsv-(\d+)"[^>]*>([\s\S]*?)<\/ul>/gi;
-        var listMatch;
-        while ((listMatch = listRegex.exec(html)) !== null) {
-            var svId = listMatch[1];
-            var listHtml = listMatch[2];
-            var episodes = [];
-            var epRegex = /<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
-            var epMatch;
-            while ((epMatch = epRegex.exec(listHtml)) !== null) {
-                var epUrl = epMatch[1];
-                var epName = PluginUtils.cleanText(epMatch[2]);
-                var epSlugMatch = epUrl.match(/\/([^\/.]+)\.html/);
-                var epSlug = epSlugMatch ? epSlugMatch[1].replace(/-sv\d+$/, "") : "";
-                episodes.push({
-                    id: epSlug + "|" + postId + "|" + svId,
-                    name: "Tập " + epName,
-                    slug: epSlug
-                });
+        var episodes = [];
+        var seen = {};
+
+        var epRegex = /<a[^>]+href="(https?:\/\/yanhh3d\.ee\/[^"]+\/tap-[^"]+\.html)"[^>]*>([\s\S]*?)<\/a>/gi;
+        var epMatch;
+        while ((epMatch = epRegex.exec(html)) !== null) {
+            var epUrl = epMatch[1];
+            var epLabel = PluginUtils.cleanText(epMatch[2]);
+            var epSlug = epUrl.replace(/https?:\/\/[^\/]+\//, "").replace(/\/$/, "");
+            if (!seen[epSlug]) {
+                seen[epSlug] = true;
+                episodes.push({ id: epSlug, name: epLabel || epSlug, slug: epSlug });
             }
-            if (episodes.length > 0) {
-                episodes.reverse();
-                servers.push({ name: "Server " + svId, episodes: episodes });
-            }
+        }
+
+        // Sort ascending by episode number
+        episodes.sort(function(a, b) {
+            var na = parseInt(a.slug.match(/tap-(\d+)/i) ? a.slug.match(/tap-(\d+)/i)[1] : 0);
+            var nb = parseInt(b.slug.match(/tap-(\d+)/i) ? b.slug.match(/tap-(\d+)/i)[1] : 0);
+            return na - nb;
+        });
+
+        if (episodes.length > 0) {
+            servers.push({ name: "Server 1", episodes: episodes });
         }
 
         return JSON.stringify({
             title: title,
             posterUrl: poster,
-            description: description,
+            backdropUrl: poster,
+            description: desc,
             servers: servers,
             quality: "4K",
-            lang: "Vietsub"
+            lang: "Vietsub",
+            year: year
         });
     } catch (e) { return "null"; }
 }
 
+// Parse episode player page: extract m3u8/mp4 or iframe embed URL
 function parseDetailResponse(html) {
     try {
         var streamUrl = "";
-        var fileM = html.match(/"file"\s*:\s*"([^"]+)"/i) || html.match(/"url"\s*:\s*"([^"]+)"/i);
-        if (fileM) streamUrl = fileM[1].replace(/\\\/|\\\\/g, "/");
 
+        // Strategy 1: look for file/url in JSON
+        var fileM = html.match(/"file"\s*:\s*"([^"]+)"/i) || html.match(/"url"\s*:\s*"([^"]+\.m3u8[^"]*)"/i);
+        if (fileM) streamUrl = fileM[1].replace(/\\\//g, "/");
+
+        // Strategy 2: direct .m3u8 or .mp4 URL in source
         if (!streamUrl) {
-            var iframeMatch = html.match(/<iframe[^>]+src=["']([^"']+)["']/i);
-            if (iframeMatch) streamUrl = iframeMatch[1];
+            var mediaM = html.match(/(https?:\/\/[^"'\s]+\.(?:m3u8|mp4)[^"'\s]*)/i);
+            if (mediaM) streamUrl = mediaM[1];
+        }
+
+        // Strategy 3: iframe embed
+        if (!streamUrl) {
+            var ifrM = html.match(/<iframe[^>]+src=["']([^"']+)["']/i);
+            if (ifrM) streamUrl = ifrM[1];
         }
 
         if (streamUrl) {
