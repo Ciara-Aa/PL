@@ -77,6 +77,13 @@
             "version": "1.0.0",
             "scriptUrl": "https://raw.githubusercontent.com/Ciara-Aa/PL/main/plugins/misskon_plugin.js",
             "iconUrl": "https://misskon.com/favicon.ico"
+        },
+        {
+            "id": "yanhh3d",
+            "name": "YanHH3D",
+            "version": "1.0.0",
+            "scriptUrl": "https://raw.githubusercontent.com/Ciara-Aa/PL/main/plugins/yanhh3d_plugin.js",
+            "iconUrl": "https://yanhh3d.ee/favicon.ico"
         }
     ]
 }
